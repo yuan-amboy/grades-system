@@ -95,10 +95,6 @@ while ($row = $enrollment_result->fetch_assoc()):
 <?php endwhile; ?>
 
 <?php
-// (Grade submission handler moved lower — single improved handler is used to avoid duplicates)
-?>
-
-<?php
 // --- My Submitted Grades (for correction requests) ---
 $list = $conn->prepare(
     "SELECT g.grade_id, u.full_name AS student, s.subject_code, gp.period_name, g.percentage, g.numeric_grade, g.status, g.is_locked
@@ -161,7 +157,7 @@ if ($grades->num_rows > 0):
 <?php endif; ?>
 
 <?php
-// Handle grade submission (improved): prevent submitting if a locked grade exists for same enrollment+period
+// Handle grade submission: prevent submitting if a locked grade exists for same enrollment+period
 if (isset($_POST["encode"])) {
     if (empty($_POST['csrf_token'])) { http_response_code(400); die('Missing CSRF token'); }
     csrf_validate_or_die($_POST['csrf_token']);
@@ -170,9 +166,9 @@ if (isset($_POST["encode"])) {
     $period_id = intval($_POST["period_id"]);
     $percentage = floatval($_POST["percentage"]);
 
-    // Check existing most recent grade for this enrollment+period
+    // Check existing most recent grade for this enrollment+period using grade_id for ordering
     $chk = $conn->prepare(
-        "SELECT is_locked FROM grades WHERE enrollment_id = ? AND period_id = ? ORDER BY created_at DESC LIMIT 1"
+        "SELECT is_locked FROM grades WHERE enrollment_id = ? AND period_id = ? ORDER BY grade_id DESC LIMIT 1"
     );
     $chk->bind_param("ii", $enrollment_id, $period_id);
     $chk->execute();
@@ -181,7 +177,6 @@ if (isset($_POST["encode"])) {
         if (intval($row['is_locked']) === 1) {
             logAction($conn, $_SESSION["user_id"], "Attempted encode while grade locked for enrollment $enrollment_id period $period_id");
             echo "<p style='color:red;'>Cannot submit: grade is locked pending correction/approval.</p>";
-            // Do not proceed
         } else {
             [$numeric, $remarks] = convertGrade($percentage);
 
@@ -200,7 +195,7 @@ if (isset($_POST["encode"])) {
             echo "<p style='color:green;'>Grade submitted successfully.</p>";
         }
     } else {
-        // No previous grade - allow insert
+        // No previous grade — allow insert
         [$numeric, $remarks] = convertGrade($percentage);
         $stmt = $conn->prepare(
             "INSERT INTO grades 
